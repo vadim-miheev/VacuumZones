@@ -1,3 +1,6 @@
+import logging
+_LOGGER = logging.getLogger(__name__)
+
 from homeassistant.components.vacuum import (
     StateVacuumEntity,
     VacuumEntityFeature,
@@ -45,7 +48,13 @@ async def async_setup_platform(hass, _, async_add_entities, discovery_info=None)
             return
 
         new_state: State = event.data.get("new_state")
-        if new_state.state not in (STATE_RETURNING, STATE_DOCKED):
+        _LOGGER.debug("New state received: %s", new_state.state)
+
+        if new_state.state in (STATE_DOCKED):
+            queue = []
+            return
+
+        if new_state.state not in (STATE_RETURNING):
             return
 
         prev: ZoneVacuum = queue.pop(0)
