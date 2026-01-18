@@ -25,12 +25,18 @@ try:
     STATE_CLEANING = VacuumActivity.CLEANING
     STATE_RETURNING = VacuumActivity.RETURNING
     STATE_DOCKED = VacuumActivity.DOCKED
+    STATE_IDLE = VacuumActivity.IDLE
+    STATE_PAUSED = VacuumActivity.PAUSED
 except ImportError:
     # if the new constants are unavailable, use the old ones
     from homeassistant.components.vacuum import (
         STATE_CLEANING,
         STATE_RETURNING,
         STATE_DOCKED,
+    )
+    from homeassistant.const import (
+        STATE_IDLE,
+        STATE_PAUSED,
     )
 
 
