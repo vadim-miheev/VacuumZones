@@ -50,17 +50,24 @@ async def async_setup_platform(hass, _, async_add_entities, discovery_info=None)
     async_add_entities(entities)
 
     async def state_changed_event_listener(event: Event):
-        if entity_id != event.data.get(ATTR_ENTITY_ID) or not queue:
+        if entity_id != event.data.get(ATTR_ENTITY_ID):
             return
 
         new_state: State = event.data.get("new_state")
+        vacuum_state = new_state.attributes.get("vacuum_state")
         _LOGGER.debug("New state received: %s", new_state.state)
+        _LOGGER.debug("New vacuum state received: %s", vacuum_state)
+
+        if not queue:
+            return
 
         if new_state.state in (STATE_DOCKED):
-            queue = []
+            queue.clear()
             return
 
         if new_state.state not in (STATE_RETURNING):
+            return
+        elif vacuum_state and vacuum_state != "returning":
             return
 
         prev: ZoneVacuum = queue.pop(0)
