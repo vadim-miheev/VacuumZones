@@ -132,6 +132,27 @@ class ZoneVacuum(StateVacuumEntity):
 
         if self.service:
             await self.hass.services.async_call(
+                "select",
+                "select_option",
+                {
+                    ATTR_ENTITY_ID: "select.x40_ultra_complete_cleangenius",
+                    "option": "off",
+                },
+                blocking=True,
+            )
+
+            cleaning_mode = self.service_data.pop("cleaning_mode", "sweeping")
+            await self.hass.services.async_call(
+                "select",
+                "select_option",
+                {
+                    ATTR_ENTITY_ID: "select.x40_ultra_complete_cleaning_mode",
+                    "option": cleaning_mode,
+                },
+                blocking=True,
+            )
+
+            await self.hass.services.async_call(
                 self.domain, self.service, self.service_data, True
             )
 
