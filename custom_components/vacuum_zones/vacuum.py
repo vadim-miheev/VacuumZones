@@ -1,5 +1,5 @@
+import asyncio
 import logging
-_LOGGER = logging.getLogger(__name__)
 
 from homeassistant.components.vacuum import (
     StateVacuumEntity,
@@ -17,6 +17,7 @@ from homeassistant.core import Context, Event, State
 from homeassistant.helpers import entity_registry
 from homeassistant.helpers.script import Script
 
+_LOGGER = logging.getLogger(__name__)
 
 try:
     # trying to import new constants from VacuumActivity HA Core 2026.1
@@ -43,8 +44,9 @@ except ImportError:
 async def async_setup_platform(hass, _, async_add_entities, discovery_info=None):
     entity_id: str = discovery_info["entity_id"]
     queue: list[ZoneVacuum] = []
+    queue_lock = asyncio.Lock()
     entities = [
-        ZoneVacuum(name, config, entity_id, queue)
+        ZoneVacuum(name, config, entity_id, queue, queue_lock)
         for name, config in discovery_info["zones"].items()
     ]
     async_add_entities(entities)
@@ -54,30 +56,36 @@ async def async_setup_platform(hass, _, async_add_entities, discovery_info=None)
             return
 
         new_state: State = event.data.get("new_state")
+        if not new_state:
+            return
         vacuum_state = new_state.attributes.get("vacuum_state")
         _LOGGER.debug("New state received: %s", new_state.state)
         _LOGGER.debug("New vacuum state received: %s", vacuum_state)
 
-        if not queue:
-            return
+        async with queue_lock:
+            if not queue:
+                return
 
-        if new_state.state in (STATE_DOCKED):
-            queue.clear()
-            return
+            if new_state.state == STATE_DOCKED:
+                for vacuum in queue:
+                    await vacuum.internal_stop()
+                queue.clear()
+                return
 
-        if new_state.state not in (STATE_RETURNING):
-            return
-        elif vacuum_state and vacuum_state != "returning":
-            return
+            if new_state.state != STATE_RETURNING:
+                return
 
-        prev: ZoneVacuum = queue.pop(0)
-        await prev.internal_stop()
+            if vacuum_state and vacuum_state != "returning":
+                return
 
-        if not queue:
-            return
+            prev: ZoneVacuum = queue.pop(0)
+            await prev.internal_stop()
 
-        next_: ZoneVacuum = queue[0]
-        await next_.internal_start(event.context)
+            if not queue:
+                return
+
+            next_: ZoneVacuum = queue[0]
+            await next_.internal_start(event.context)
 
     hass.bus.async_listen(EVENT_STATE_CHANGED, state_changed_event_listener)
 
@@ -90,10 +98,18 @@ class ZoneVacuum(StateVacuumEntity):
     service: str = None
     script: Script = None
 
-    def __init__(self, name: str, config: dict, entity_id: str, queue: list):
+    def __init__(
+            self,
+            name: str,
+            config: dict,
+            entity_id: str,
+            queue: list,
+            queue_lock: asyncio.Lock,
+    ):
         self._attr_name = config.pop("name", name)
         self.service_data: dict = config | {ATTR_ENTITY_ID: entity_id}
         self.queue = queue
+        self.queue_lock = queue_lock
 
     @property
     def vacuum_entity_id(self) -> str:
@@ -160,7 +176,10 @@ class ZoneVacuum(StateVacuumEntity):
             )
 
             await self.hass.services.async_call(
-                self.domain, self.service, self.service_data, True
+                self.domain,
+                self.service,
+                self.service_data,
+                blocking=True,
             )
 
     async def internal_stop(self):
@@ -168,20 +187,21 @@ class ZoneVacuum(StateVacuumEntity):
         self.async_write_ha_state()
 
     async def async_start(self):
-        self.queue.append(self)
+        async with self.queue_lock:
+            self.queue.append(self)
 
-        state = self.hass.states.get(self.vacuum_entity_id)
-        if len(self.queue) > 1 or state == STATE_CLEANING:
-            self._attr_state = STATE_PAUSED
-            self.async_write_ha_state()
-            return
+            state = self.hass.states.get(self.vacuum_entity_id)
+            if len(self.queue) > 1 or state == STATE_CLEANING:
+                self._attr_state = STATE_PAUSED
+                self.async_write_ha_state()
+                return
 
-        await self.internal_start(self._context)
+            await self.internal_start(self._context)
 
     async def async_stop(self, **kwargs):
-        for vacuum in self.queue:
-            await vacuum.internal_stop()
+        async with self.queue_lock:
+            for vacuum in self.queue:
+                await vacuum.internal_stop()
+            self.queue.clear()
 
-        self.queue.clear()
-
-        await self.internal_stop()
+            await self.internal_stop()
