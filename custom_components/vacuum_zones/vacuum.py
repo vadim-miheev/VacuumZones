@@ -172,7 +172,7 @@ class ZoneCoordinator:
     async def _get_vacuum_domain(self):
         """Получить домен основного пылесоса."""
         entry = entity_registry.async_get(self.hass).async_get(self.vacuum_entity_id)
-        return entry.platform if entry else "xiaomi_miio"
+        return entry.platform if entry else "dreame_vacuum"
 
     async def _activate_customized_cleaning(self):
         """Активировать переключатель customized cleaning."""
