@@ -149,31 +149,52 @@ class ZoneVacuum(StateVacuumEntity):
     async def internal_start(self, context: Context) -> None:
         self._attr_state = STATE_CLEANING
         self.async_write_ha_state()
+        _LOGGER.debug("Vacuum stared: %s", self._attr_name)
 
         if self.script:
             await self.script.async_run(context=context)
 
         if self.service:
-            await self.hass.services.async_call(
-                "select",
-                "select_option",
-                {
-                    ATTR_ENTITY_ID: "select.x40_ultra_complete_cleangenius",
-                    "option": "off",
-                },
-                blocking=True,
-            )
-
             cleaning_mode = self.service_data.pop("cleaning_mode", "sweeping")
-            await self.hass.services.async_call(
-                "select",
-                "select_option",
-                {
-                    ATTR_ENTITY_ID: "select.x40_ultra_complete_cleaning_mode",
-                    "option": cleaning_mode,
-                },
-                blocking=True,
-            )
+
+            if cleaning_mode in ("routine_cleaning", "deep_cleaning"):
+                await self.hass.services.async_call(
+                    "select",
+                    "select_option",
+                    {
+                        ATTR_ENTITY_ID: "select.x40_ultra_complete_cleangenius",
+                        "option": cleaning_mode,
+                    },
+                    blocking=True,
+                )
+                await self.hass.services.async_call(
+                    "select",
+                    "select_option",
+                    {
+                        ATTR_ENTITY_ID: "select.x40_ultra_complete_cleangenius_mode",
+                        "option": "vacuum_and_mop",
+                    },
+                    blocking=True,
+                )
+            else:
+                await self.hass.services.async_call(
+                    "select",
+                    "select_option",
+                    {
+                        ATTR_ENTITY_ID: "select.x40_ultra_complete_cleangenius",
+                        "option": "off",
+                    },
+                    blocking=True,
+                )
+                await self.hass.services.async_call(
+                    "select",
+                    "select_option",
+                    {
+                        ATTR_ENTITY_ID: "select.x40_ultra_complete_cleaning_mode",
+                        "option": cleaning_mode,
+                    },
+                    blocking=True,
+                )
 
             await self.hass.services.async_call(
                 self.domain,
@@ -185,21 +206,26 @@ class ZoneVacuum(StateVacuumEntity):
     async def internal_stop(self):
         self._attr_state = STATE_IDLE
         self.async_write_ha_state()
+        _LOGGER.debug("Vacuum stopped: %s", self._attr_name)
 
     async def async_start(self):
         async with self.queue_lock:
+            _LOGGER.debug("Vacuum start request: %s", self._attr_name)
             self.queue.append(self)
 
             state = self.hass.states.get(self.vacuum_entity_id)
             if len(self.queue) > 1 or state == STATE_CLEANING:
                 self._attr_state = STATE_PAUSED
                 self.async_write_ha_state()
+                _LOGGER.debug("Vacuum paused: %s", self._attr_name)
                 return
 
             await self.internal_start(self._context)
 
     async def async_stop(self, **kwargs):
         async with self.queue_lock:
+            _LOGGER.debug("Vacuum stop request: %s", self._attr_name)
+
             for vacuum in self.queue:
                 await vacuum.internal_stop()
             self.queue.clear()
