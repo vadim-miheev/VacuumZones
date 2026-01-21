@@ -1,6 +1,6 @@
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-from homeassistant.const import CONF_ENTITY_ID, CONF_SEQUENCE
+from homeassistant.const import CONF_ENTITY_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.discovery import async_load_platform
 
@@ -16,11 +16,8 @@ CONFIG_SCHEMA = vol.Schema(
                     cv.string: vol.Schema(
                         {
                             vol.Optional("name"): str,
-                            vol.Optional("room"): vol.Any(list, int),
-                            vol.Optional("zone"): list,
-                            vol.Optional("repeats"): int,
-                            vol.Optional("goto"): list,
-                            vol.Optional(CONF_SEQUENCE): cv.SCRIPT_SCHEMA,
+                            vol.Required("room"): vol.Any(list, int),
+                            vol.Optional("cleaning_mode"): str,
                         },
                         extra=vol.ALLOW_EXTRA,
                     )
