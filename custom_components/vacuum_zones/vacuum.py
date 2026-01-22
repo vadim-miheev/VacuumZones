@@ -180,6 +180,7 @@ class ZoneCoordinator:
         domain = await self._get_vacuum_domain()
 
         # Вызвать vacuum_clean_segment
+        _LOGGER.debug("vacuum_clean_segment for rooms %s", rooms)
         await self.hass.services.async_call(
             domain,
             "vacuum_clean_segment",
