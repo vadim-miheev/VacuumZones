@@ -5,7 +5,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.discovery import async_load_platform
 
 DOMAIN = "vacuum_zones"
-PLATFORMS = ["sensor"]
+PLATFORMS = ["vacuum"]
 
 CONFIG_SCHEMA = vol.Schema(
     {
@@ -30,7 +30,11 @@ CONFIG_SCHEMA = vol.Schema(
 
 
 async def async_setup(hass: HomeAssistant, config: dict):
+    domain_config = config[DOMAIN]
+
+    # Load vacuum platform (creates coordinator, vacuum entities, and binary sensor)
     hass.async_create_task(
-        async_load_platform(hass, "vacuum", DOMAIN, config[DOMAIN], config)
+        async_load_platform(hass, "vacuum", DOMAIN, domain_config, config)
     )
+
     return True
