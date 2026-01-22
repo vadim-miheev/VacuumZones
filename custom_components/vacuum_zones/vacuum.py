@@ -77,7 +77,7 @@ class ZoneCoordinator:
 
         try:
             # Проверить состояние пылесоса и остановить если cleaning
-            await self._check_and_stop_vacuum()
+            await self.check_and_stop_vacuum()
 
             # Подготовить данные для сервиса
             service_data = await self._prepare_service_data()
@@ -92,7 +92,7 @@ class ZoneCoordinator:
             self.pending_groups.clear()
             self.timer_handle = None
 
-    async def _check_and_stop_vacuum(self):
+    async def check_and_stop_vacuum(self):
         """Остановить пылесос если он в состоянии cleaning."""
         state = self.hass.states.get(self.vacuum_entity_id)
         if state and state.state == STATE_CLEANING:
@@ -149,14 +149,14 @@ class ZoneCoordinator:
 
         if use_customized_cleaning:
             # Активировать customized cleaning switch
-            await self._activate_customized_cleaning()
-            # Использовать стандартный cleaning_mode для вызова сервиса
-            cleaning_mode_for_service = "sweeping"
+            await self._set_customized_cleaning(True)
         else:
-            cleaning_mode_for_service = cleaning_mode
+            await self._set_customized_cleaning(False)
+            # Установить cleaning_mode
+            await self._set_cleaning_mode(cleaning_mode)
 
-        # Установить cleaning_mode
-        await self._set_cleaning_mode(cleaning_mode_for_service)
+        # Определить домен и сервис на основе основного пылесоса
+        domain = await self._get_vacuum_domain()
 
         # Вызвать vacuum_clean_segment
         await self.hass.services.async_call(
@@ -174,16 +174,19 @@ class ZoneCoordinator:
         entry = entity_registry.async_get(self.hass).async_get(self.vacuum_entity_id)
         return entry.platform if entry else "dreame_vacuum"
 
-    async def _activate_customized_cleaning(self):
-        """Активировать переключатель customized cleaning."""
+    async def _set_customized_cleaning(self, turn_on=True):
+        """Активировать или деактивировать переключатель customized cleaning.
+        """
         switch_id = "switch.x40_ultra_complete_customized_cleaning"
         if self.hass.states.get(switch_id):
+            service = "turn_on" if turn_on else "turn_off"
             await self.hass.services.async_call(
                 "switch",
-                "turn_on",
+                service,
                 {ATTR_ENTITY_ID: switch_id},
                 blocking=True,
             )
+            _LOGGER.debug("%s customized_cleaning", service)
 
     async def _set_cleaning_mode(self, cleaning_mode):
         """Установить режим уборки через селекторы."""
@@ -207,6 +210,7 @@ class ZoneCoordinator:
                 },
                 blocking=True,
             )
+            _LOGGER.debug("Activated cleangenius %s", cleaning_mode)
         else:
             # Установить обычный режим уборки
             await self.hass.services.async_call(
@@ -227,7 +231,7 @@ class ZoneCoordinator:
                 },
                 blocking=True,
             )
-
+            _LOGGER.debug("Activated cleaning mode %s", cleaning_mode)
 
 async def async_setup_platform(hass, _, async_add_entities, discovery_info=None):
     entity_id: str = discovery_info["entity_id"]
@@ -245,17 +249,19 @@ async def async_setup_platform(hass, _, async_add_entities, discovery_info=None)
 
 class ZoneVacuum(StateVacuumEntity):
     _attr_state = STATE_IDLE
-    _attr_supported_features = VacuumEntityFeature.START
+    _attr_supported_features = VacuumEntityFeature.START | VacuumEntityFeature.STOP
 
     def __init__(
             self,
             name: str,
             config: dict,
-            entity_id: str,
             coordinator: ZoneCoordinator,
+            parent_id: str,
+            number: int,
     ):
         self._attr_name = config.pop("name", name)
-        self.entity_id = entity_id
+        self._attr_unique_id = f"zone_vacuum_{number + 1}"
+        self.parent_id = parent_id
         self.coordinator = coordinator
 
         # Извлечение room и cleaning_mode из конфигурации
@@ -268,7 +274,7 @@ class ZoneVacuum(StateVacuumEntity):
 
     @property
     def vacuum_entity_id(self) -> str:
-        return self.entity_id
+        return self.parent_id
 
     async def async_added_to_hass(self):
         """Вызывается когда entity добавлен в HA."""
