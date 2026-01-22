@@ -5,11 +5,17 @@ from homeassistant.components.vacuum import (
     StateVacuumEntity,
     VacuumEntityFeature,
 )
+
+from homeassistant.components.binary_sensor import (
+    BinarySensorEntity,
+)
+
 from homeassistant.const import (
     STATE_IDLE,
     ATTR_ENTITY_ID,
 )
 from homeassistant.helpers import entity_registry
+from . import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +44,21 @@ class ZoneCoordinator:
         self.pending_groups = {}  # cleaning_mode -> list of ZoneVacuum
         self.timer_handle = None
         self.grouping_timeout = 2  # секунды
+        self._listeners = []  # Callback functions for state changes
+
+    def add_listener(self, callback):
+        """Добавить слушатель для уведомлений об изменении pending_groups."""
+        self._listeners.append(callback)
+
+    def remove_listener(self, callback):
+        """Удалить слушатель."""
+        if callback in self._listeners:
+            self._listeners.remove(callback)
+
+    def _notify_listeners(self):
+        """Уведомить всех слушателей об изменении состояния."""
+        for callback in self._listeners:
+            callback()
 
     async def schedule_cleaning(self, zone_vacuum):
         """Добавить виртуальный пылесос в группу и запустить/сбросить таймер."""
@@ -46,6 +67,7 @@ class ZoneCoordinator:
         if cleaning_mode not in self.pending_groups:
             self.pending_groups[cleaning_mode] = []
         self.pending_groups[cleaning_mode].append(zone_vacuum)
+        self._notify_listeners()
 
         # Запустить/сбросить таймер группировки
         if self.timer_handle:
@@ -69,6 +91,7 @@ class ZoneCoordinator:
             # Очищаем pending_groups при ошибке
             self.pending_groups.clear()
             self.timer_handle = None
+            self._notify_listeners()
 
     async def _execute_group(self):
         """Выполнить накопленные группы."""
@@ -91,6 +114,7 @@ class ZoneCoordinator:
             # Всегда очищаем pending_groups после выполнения или ошибки
             self.pending_groups.clear()
             self.timer_handle = None
+            self._notify_listeners()
 
     async def check_and_stop_vacuum(self):
         """Остановить пылесос если он в состоянии cleaning."""
@@ -143,9 +167,6 @@ class ZoneCoordinator:
         rooms = service_data["rooms"]
         cleaning_mode = service_data["cleaning_mode"]
         use_customized_cleaning = service_data["use_customized_cleaning"]
-
-        # Определить домен и сервис на основе основного пылесоса
-        domain = await self._get_vacuum_domain()
 
         if use_customized_cleaning:
             # Активировать customized cleaning switch
@@ -236,14 +257,32 @@ class ZoneCoordinator:
 async def async_setup_platform(hass, _, async_add_entities, discovery_info=None):
     entity_id: str = discovery_info["entity_id"]
 
-    # Создаем координатор для группировки запусков
+    # Initialize hass.data structure for our domain
+    if DOMAIN not in hass.data:
+        hass.data[DOMAIN] = {}
+
+    # Initialize entity_id entry if not exists
+    if entity_id not in hass.data[DOMAIN]:
+        hass.data[DOMAIN][entity_id] = {}
+
+    entry = hass.data[DOMAIN][entity_id]
+
+    # Create coordinator for grouping (only for vacuum platform)
     coordinator = ZoneCoordinator(hass, entity_id)
 
-    # Создаем виртуальные пылесосы
+    # Store coordinator
+    entry["coordinator"] = coordinator
+
+    # Create virtual vacuums
     entities = [
-        ZoneVacuum(name, config, entity_id, coordinator)
-        for name, config in discovery_info["zones"].items()
+        ZoneVacuum(name, config, coordinator, entity_id, i)
+        for i, (name, config) in enumerate(discovery_info["zones"].items())
     ]
+
+    # Create binary sensor for coordinator pending state
+    binary_sensor = ZoneCoordinatorIsPending(coordinator, entity_id)
+    entities.append(binary_sensor)
+
     async_add_entities(entities)
 
 
@@ -288,6 +327,51 @@ class ZoneVacuum(StateVacuumEntity):
 
     async def async_stop(self, **kwargs):
         """Остановка виртуального пылесоса не поддерживается в новой архитектуре."""
-        _LOGGER.debug("Vacuum stop request ignored (not supported): %s", self._attr_name)
-        # В новой архитектуре остановка отдельных виртуальных пылесосов не поддерживается
-        # Остановка основного пылесоса выполняется через координатор при необходимости
+        _LOGGER.debug("Vacuum stop request: %s", self._attr_name)
+        await self.coordinator.check_and_stop_vacuum()
+
+class ZoneCoordinatorIsPending(BinarySensorEntity):
+    """Binary sensor indicating if coordinator has pending cleaning groups."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_name = "Vacuum zones pending"
+
+    def __init__(self, coordinator, parent_entity_id):
+        """Initialize the binary sensor."""
+        self.coordinator = coordinator
+        self.parent_entity_id = parent_entity_id
+        self._attr_unique_id = f"{parent_entity_id}_pending"
+        self._attr_device_info = {
+            "identifiers": {("vacuum_zones", parent_entity_id)},
+            "name": f"Vacuum Zones ({parent_entity_id})",
+            "manufacturer": "VacuumZones",
+            "model": "Zone Coordinator",
+        }
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if coordinator has pending groups."""
+        return len(self.coordinator.pending_groups) > 0
+
+    @property
+    def icon(self) -> str:
+        """Return the icon to use in the frontend."""
+        return "mdi:timer-sand" if self.is_on else "mdi:timer-sand-empty"
+
+    async def async_added_to_hass(self):
+        """Register callbacks when entity is added to hass."""
+        await super().async_added_to_hass()
+        # Register callback with coordinator
+        self.coordinator.add_listener(self._handle_coordinator_update)
+
+    async def async_will_remove_from_hass(self):
+        """Clean up when entity is removed from hass."""
+        await super().async_will_remove_from_hass()
+        # Remove callback from coordinator
+        self.coordinator.remove_listener(self._handle_coordinator_update)
+
+    def _handle_coordinator_update(self):
+        """Handle coordinator state updates."""
+        # Schedule state update in Home Assistant
+        self.async_write_ha_state()
