@@ -361,8 +361,8 @@ async def async_setup_platform(hass, _, async_add_entities, discovery_info=None)
 
     # Create virtual vacuums for vacuum platform
     entities = [
-        ZoneVacuum(name, config, coordinator, entity_id, i)
-        for i, (name, config) in enumerate(discovery_info["zones"].items())
+        ZoneVacuum(name, config, coordinator, entity_id)
+        for (name, config) in discovery_info["zones"].items()
     ]
 
     async_add_entities(entities)
@@ -378,10 +378,8 @@ class ZoneVacuum(StateVacuumEntity):
             config: dict,
             coordinator: ZoneCoordinator,
             parent_id: str,
-            number: int,
     ):
         self._attr_name = config.pop("name", name)
-        self._attr_unique_id = f"zone_vacuum_{number + 1}"
         self.parent_id = parent_id
         self.coordinator = coordinator
 
