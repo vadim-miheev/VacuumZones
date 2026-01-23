@@ -171,6 +171,8 @@ class ZoneCoordinator:
         use_customized_cleaning = service_data["use_customized_cleaning"]
 
         if use_customized_cleaning:
+            # Выключить Clean Genius перед кастомной уборкой
+            await self._turn_off_cleangenius()
             # Активировать customized cleaning switch
             await self._set_customized_cleaning(True)
             # Установить настройки для каждой комнаты
@@ -239,15 +241,7 @@ class ZoneCoordinator:
             _LOGGER.debug("Activated cleangenius %s", cleaning_mode)
         else:
             # Установить обычный режим уборки
-            await self.hass.services.async_call(
-                "select",
-                "select_option",
-                {
-                    ATTR_ENTITY_ID: f"select.{self.prefix}_cleangenius",
-                    "option": "off",
-                },
-                blocking=True,
-            )
+            await self._turn_off_cleangenius()
             await self.hass.services.async_call(
                 "select",
                 "select_option",
@@ -258,6 +252,19 @@ class ZoneCoordinator:
                 blocking=True,
             )
             _LOGGER.debug("Activated cleaning mode %s", cleaning_mode)
+
+    async def _turn_off_cleangenius(self):
+        """Выключить Clean Genius."""
+        await self.hass.services.async_call(
+            "select",
+            "select_option",
+            {
+                ATTR_ENTITY_ID: f"select.{self.prefix}_cleangenius",
+                "option": "off",
+            },
+            blocking=True,
+        )
+        _LOGGER.debug("Turned off cleangenius")
 
     async def _set_customized_room_settings(self, rooms):
         """Установить настройки для каждой комнаты в режиме кастомной уборки.
