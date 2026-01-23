@@ -12,6 +12,8 @@ CONFIG_SCHEMA = vol.Schema(
         DOMAIN: vol.Schema(
             {
                 vol.Required(CONF_ENTITY_ID): cv.entity_id,
+                vol.Optional("test_mode", default=False): bool,
+                vol.Optional("start_delay", default=10): int,
                 vol.Required("zones"): {
                     cv.string: vol.Schema(
                         {

@@ -9,6 +9,8 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_platform(hass, _, async_add_entities, discovery_info=None):
     """Set up the binary sensor platform for vacuum_zones."""
     entity_id: str = discovery_info["entity_id"]
+    test_mode = discovery_info.get("test_mode", False)
+    start_delay = discovery_info.get("start_delay", 10)
 
     # Initialize hass.data structure for our domain
     hass.data.setdefault(DOMAIN, {})
@@ -19,7 +21,7 @@ async def async_setup_platform(hass, _, async_add_entities, discovery_info=None)
     # Create or retrieve coordinator
     if "coordinator" not in entry:
         # First platform to load (usually vacuum) creates the coordinator
-        coordinator = ZoneCoordinator(hass, entity_id)
+        coordinator = ZoneCoordinator(hass, entity_id, test_mode=test_mode, start_delay=start_delay)
         entry["coordinator"] = coordinator
     else:
         coordinator = entry["coordinator"]
