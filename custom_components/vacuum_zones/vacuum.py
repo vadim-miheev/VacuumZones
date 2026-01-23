@@ -44,7 +44,7 @@ class ZoneCoordinator:
         self.vacuum_entity_id = vacuum_entity_id
         self.pending_groups = {}  # cleaning_mode -> list of ZoneVacuum
         self.timer_handle = None
-        self.grouping_timeout = 2  # секунды
+        self.grouping_timeout = 10  # секунды
         self._listeners = []  # Callback functions for state changes
 
     def add_listener(self, callback):
@@ -172,6 +172,8 @@ class ZoneCoordinator:
         if use_customized_cleaning:
             # Активировать customized cleaning switch
             await self._set_customized_cleaning(True)
+            # Установить настройки для каждой комнаты
+            await self._set_customized_room_settings(rooms)
         else:
             await self._set_customized_cleaning(False)
             # Установить cleaning_mode
@@ -200,7 +202,8 @@ class ZoneCoordinator:
     async def _set_customized_cleaning(self, turn_on=True):
         """Активировать или деактивировать переключатель customized cleaning.
         """
-        switch_id = "switch.x40_ultra_complete_customized_cleaning"
+        prefix = self.vacuum_entity_id.split('.', 1)[1]
+        switch_id = f"switch.{prefix}_customized_cleaning"
         if self.hass.states.get(switch_id):
             service = "turn_on" if turn_on else "turn_off"
             await self.hass.services.async_call(
@@ -213,13 +216,14 @@ class ZoneCoordinator:
 
     async def _set_cleaning_mode(self, cleaning_mode):
         """Установить режим уборки через селекторы."""
+        prefix = self.vacuum_entity_id.split('.', 1)[1]
         if cleaning_mode in ("routine_cleaning", "deep_cleaning"):
             # Установить режим Clean Genius
             await self.hass.services.async_call(
                 "select",
                 "select_option",
                 {
-                    ATTR_ENTITY_ID: "select.x40_ultra_complete_cleangenius",
+                    ATTR_ENTITY_ID: f"select.{prefix}_cleangenius",
                     "option": cleaning_mode,
                 },
                 blocking=True,
@@ -228,7 +232,7 @@ class ZoneCoordinator:
                 "select",
                 "select_option",
                 {
-                    ATTR_ENTITY_ID: "select.x40_ultra_complete_cleangenius_mode",
+                    ATTR_ENTITY_ID: f"select.{prefix}_cleangenius_mode",
                     "option": "vacuum_and_mop",
                 },
                 blocking=True,
@@ -240,7 +244,7 @@ class ZoneCoordinator:
                 "select",
                 "select_option",
                 {
-                    ATTR_ENTITY_ID: "select.x40_ultra_complete_cleangenius",
+                    ATTR_ENTITY_ID: f"select.{prefix}_cleangenius",
                     "option": "off",
                 },
                 blocking=True,
@@ -249,12 +253,94 @@ class ZoneCoordinator:
                 "select",
                 "select_option",
                 {
-                    ATTR_ENTITY_ID: "select.x40_ultra_complete_cleaning_mode",
+                    ATTR_ENTITY_ID: f"select.{prefix}_cleaning_mode",
                     "option": cleaning_mode,
                 },
                 blocking=True,
             )
             _LOGGER.debug("Activated cleaning mode %s", cleaning_mode)
+
+    async def _set_customized_room_settings(self, rooms):
+        """Установить настройки для каждой комнаты в режиме кастомной уборки.
+
+        Для каждой комнаты устанавливает:
+        1. Режим уборки (sweeping или sweeping_and_mopping)
+        2. Количество повторов (1x или 2x)
+        """
+        # Получить префикс entity (например, "x40_ultra_complete")
+        prefix = self.vacuum_entity_id.split('.', 1)[1]
+
+        # Построить mapping room -> cleaning_mode из pending_groups
+        room_to_mode = {}
+        for cleaning_mode, zones in self.pending_groups.items():
+            for zone in zones:
+                room = zone.room
+                if isinstance(room, list):
+                    for r in room:
+                        if r in room_to_mode and room_to_mode[r] != cleaning_mode:
+                            _LOGGER.warning(
+                                "Room %s has conflicting cleaning modes: %s vs %s. Using %s",
+                                r, room_to_mode[r], cleaning_mode, cleaning_mode
+                            )
+                        room_to_mode[r] = cleaning_mode
+                else:
+                    if room in room_to_mode and room_to_mode[room] != cleaning_mode:
+                        _LOGGER.warning(
+                            "Room %s has conflicting cleaning modes: %s vs %s. Using %s",
+                            room, room_to_mode[room], cleaning_mode, cleaning_mode
+                        )
+                    room_to_mode[room] = cleaning_mode
+
+        # Установить настройки для каждой комнаты
+        for room in rooms:
+            cleaning_mode = room_to_mode.get(room)
+            if cleaning_mode is None:
+                _LOGGER.warning("Room %s not found in pending groups, skipping", room)
+                continue
+
+            # Определить режим уборки для комнаты
+            if cleaning_mode == "sweeping":
+                room_cleaning_mode = "sweeping"
+            else:  # sweeping_and_mopping, routine_cleaning, deep_cleaning
+                room_cleaning_mode = "sweeping_and_mopping"
+
+            # Определить количество повторов для комнаты
+            if cleaning_mode == "deep_cleaning":
+                cleaning_times = "2x"
+            else:
+                cleaning_times = "1x"
+
+            # Установить режим уборки для комнаты
+            mode_entity_id = f"select.{prefix}_room_{room}_cleaning_mode"
+            if self.hass.states.get(mode_entity_id):
+                await self.hass.services.async_call(
+                    "select",
+                    "select_option",
+                    {
+                        ATTR_ENTITY_ID: mode_entity_id,
+                        "option": room_cleaning_mode,
+                    },
+                    blocking=True,
+                )
+                _LOGGER.debug("Set room %s cleaning mode to %s", room, room_cleaning_mode)
+            else:
+                _LOGGER.warning("Entity %s not found", mode_entity_id)
+
+            # Установить количество повторов для комнаты
+            times_entity_id = f"select.{prefix}_room_{room}_cleaning_times"
+            if self.hass.states.get(times_entity_id):
+                await self.hass.services.async_call(
+                    "select",
+                    "select_option",
+                    {
+                        ATTR_ENTITY_ID: times_entity_id,
+                        "option": cleaning_times,
+                    },
+                    blocking=True,
+                )
+                _LOGGER.debug("Set room %s cleaning times to %s", room, cleaning_times)
+            else:
+                _LOGGER.warning("Entity %s not found", times_entity_id)
 
 async def async_setup_platform(hass, _, async_add_entities, discovery_info=None):
     entity_id: str = discovery_info["entity_id"]
