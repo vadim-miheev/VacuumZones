@@ -39,13 +39,14 @@ except ImportError:
 class ZoneCoordinator:
     """Координатор для группировки запусков виртуальных пылесосов."""
 
-    def __init__(self, hass, vacuum_entity_id):
+    def __init__(self, hass, vacuum_entity_id, test_mode=False, start_delay=10):
         self.hass = hass
         self.vacuum_entity_id = vacuum_entity_id
         self.prefix = vacuum_entity_id.split('.', 1)[1] # for example x40_ultra_complete
         self.pending_groups = {}  # cleaning_mode -> list of ZoneVacuum
         self.timer_handle = None
-        self.grouping_timeout = 10  # секунды
+        self.grouping_timeout = start_delay
+        self.test_mode = test_mode
         self._listeners = []  # Callback functions for state changes
 
     def add_listener(self, callback):
@@ -69,6 +70,12 @@ class ZoneCoordinator:
         if cleaning_mode not in self.pending_groups:
             self.pending_groups[cleaning_mode] = []
         self.pending_groups[cleaning_mode].append(zone_vacuum)
+
+        """Пропускаем планирование из запускаем задачу мгновенно если delay равен 0"""
+        if self.grouping_timeout == 0:
+            self._execute_group()
+            return
+
         self._notify_listeners()
 
         # Запустить/сбросить таймер группировки
@@ -123,12 +130,13 @@ class ZoneCoordinator:
         state = self.hass.states.get(self.vacuum_entity_id)
         if state and state.state == STATE_CLEANING:
             _LOGGER.debug("Vacuum is cleaning, stopping before new command")
-            await self.hass.services.async_call(
-                "vacuum",
-                "stop",
-                {ATTR_ENTITY_ID: self.vacuum_entity_id},
-                blocking=True,
-            )
+            if not self.test_mode:
+                await self.hass.services.async_call(
+                    "vacuum",
+                    "stop",
+                    {ATTR_ENTITY_ID: self.vacuum_entity_id},
+                    blocking=True,
+                )
 
     async def _prepare_service_data(self):
         """Подготовить данные для сервисного вызова."""
@@ -187,15 +195,16 @@ class ZoneCoordinator:
 
         # Вызвать vacuum_clean_segment
         _LOGGER.debug("vacuum_clean_segment for rooms %s", rooms)
-        await self.hass.services.async_call(
-            domain,
-            "vacuum_clean_segment",
-            {
-                ATTR_ENTITY_ID: self.vacuum_entity_id,
-                "segments": rooms,
-            },
-            blocking=True,
-        )
+        if not self.test_mode:
+            await self.hass.services.async_call(
+                domain,
+                "vacuum_clean_segment",
+                {
+                    ATTR_ENTITY_ID: self.vacuum_entity_id,
+                    "segments": rooms,
+                },
+                blocking=True,
+            )
 
     async def _get_vacuum_domain(self):
         """Получить домен основного пылесоса."""
@@ -348,6 +357,8 @@ class ZoneCoordinator:
 
 async def async_setup_platform(hass, _, async_add_entities, discovery_info=None):
     entity_id: str = discovery_info["entity_id"]
+    test_mode = discovery_info.get("test_mode", False)
+    start_delay = discovery_info.get("start_delay", 10)
 
     # Initialize hass.data structure for our domain
     hass.data.setdefault(DOMAIN, {})
@@ -358,7 +369,7 @@ async def async_setup_platform(hass, _, async_add_entities, discovery_info=None)
     # Create or retrieve coordinator
     if "coordinator" not in entry:
         # First platform to load (usually vacuum) creates the coordinator
-        coordinator = ZoneCoordinator(hass, entity_id)
+        coordinator = ZoneCoordinator(hass, entity_id, test_mode=test_mode, start_delay=start_delay)
         entry["coordinator"] = coordinator
     else:
         coordinator = entry["coordinator"]
