@@ -129,7 +129,7 @@ class ZoneCoordinator:
         """Остановить пылесос если он в состоянии cleaning."""
         state = self.hass.states.get(self.vacuum_entity_id)
         if state and state.state == STATE_CLEANING:
-            _LOGGER.debug("Vacuum is cleaning, stopping before new command")
+            _LOGGER.debug("Vacuum is cleaning, stopping before new command, test_mode=%s", self.test_mode)
             if not self.test_mode:
                 await self.hass.services.async_call(
                     "vacuum",
@@ -194,7 +194,7 @@ class ZoneCoordinator:
         domain = await self._get_vacuum_domain()
 
         # Вызвать vacuum_clean_segment
-        _LOGGER.debug("vacuum_clean_segment for rooms %s", rooms)
+        _LOGGER.debug("vacuum_clean_segment for rooms %s, test_mode=%s", rooms, self.test_mode)
         if not self.test_mode:
             await self.hass.services.async_call(
                 domain,
