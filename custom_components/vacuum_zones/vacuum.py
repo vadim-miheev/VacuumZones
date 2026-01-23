@@ -42,6 +42,7 @@ class ZoneCoordinator:
     def __init__(self, hass, vacuum_entity_id):
         self.hass = hass
         self.vacuum_entity_id = vacuum_entity_id
+        self.prefix = vacuum_entity_id.split('.', 1)[1] # for example x40_ultra_complete
         self.pending_groups = {}  # cleaning_mode -> list of ZoneVacuum
         self.timer_handle = None
         self.grouping_timeout = 10  # секунды
@@ -202,8 +203,7 @@ class ZoneCoordinator:
     async def _set_customized_cleaning(self, turn_on=True):
         """Активировать или деактивировать переключатель customized cleaning.
         """
-        prefix = self.vacuum_entity_id.split('.', 1)[1]
-        switch_id = f"switch.{prefix}_customized_cleaning"
+        switch_id = f"switch.{self.prefix}_customized_cleaning"
         if self.hass.states.get(switch_id):
             service = "turn_on" if turn_on else "turn_off"
             await self.hass.services.async_call(
@@ -216,14 +216,13 @@ class ZoneCoordinator:
 
     async def _set_cleaning_mode(self, cleaning_mode):
         """Установить режим уборки через селекторы."""
-        prefix = self.vacuum_entity_id.split('.', 1)[1]
         if cleaning_mode in ("routine_cleaning", "deep_cleaning"):
             # Установить режим Clean Genius
             await self.hass.services.async_call(
                 "select",
                 "select_option",
                 {
-                    ATTR_ENTITY_ID: f"select.{prefix}_cleangenius",
+                    ATTR_ENTITY_ID: f"select.{self.prefix}_cleangenius",
                     "option": cleaning_mode,
                 },
                 blocking=True,
@@ -232,7 +231,7 @@ class ZoneCoordinator:
                 "select",
                 "select_option",
                 {
-                    ATTR_ENTITY_ID: f"select.{prefix}_cleangenius_mode",
+                    ATTR_ENTITY_ID: f"select.{self.prefix}_cleangenius_mode",
                     "option": "vacuum_and_mop",
                 },
                 blocking=True,
@@ -244,7 +243,7 @@ class ZoneCoordinator:
                 "select",
                 "select_option",
                 {
-                    ATTR_ENTITY_ID: f"select.{prefix}_cleangenius",
+                    ATTR_ENTITY_ID: f"select.{self.prefix}_cleangenius",
                     "option": "off",
                 },
                 blocking=True,
@@ -253,7 +252,7 @@ class ZoneCoordinator:
                 "select",
                 "select_option",
                 {
-                    ATTR_ENTITY_ID: f"select.{prefix}_cleaning_mode",
+                    ATTR_ENTITY_ID: f"select.{self.prefix}_cleaning_mode",
                     "option": cleaning_mode,
                 },
                 blocking=True,
@@ -267,8 +266,6 @@ class ZoneCoordinator:
         1. Режим уборки (sweeping или sweeping_and_mopping)
         2. Количество повторов (1x или 2x)
         """
-        # Получить префикс entity (например, "x40_ultra_complete")
-        prefix = self.vacuum_entity_id.split('.', 1)[1]
 
         # Построить mapping room -> cleaning_mode из pending_groups
         room_to_mode = {}
@@ -311,7 +308,7 @@ class ZoneCoordinator:
                 cleaning_times = "1x"
 
             # Установить режим уборки для комнаты
-            mode_entity_id = f"select.{prefix}_room_{room}_cleaning_mode"
+            mode_entity_id = f"select.{self.prefix}_room_{room}_cleaning_mode"
             if self.hass.states.get(mode_entity_id):
                 await self.hass.services.async_call(
                     "select",
@@ -327,7 +324,7 @@ class ZoneCoordinator:
                 _LOGGER.warning("Entity %s not found", mode_entity_id)
 
             # Установить количество повторов для комнаты
-            times_entity_id = f"select.{prefix}_room_{room}_cleaning_times"
+            times_entity_id = f"select.{self.prefix}_room_{room}_cleaning_times"
             if self.hass.states.get(times_entity_id):
                 await self.hass.services.async_call(
                     "select",
