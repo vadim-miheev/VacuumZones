@@ -8,6 +8,7 @@ from homeassistant.components.vacuum import (
 
 from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
+    BinarySensorDeviceClass,
 )
 
 from homeassistant.const import (
@@ -259,30 +260,24 @@ async def async_setup_platform(hass, _, async_add_entities, discovery_info=None)
     entity_id: str = discovery_info["entity_id"]
 
     # Initialize hass.data structure for our domain
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
-
-    # Initialize entity_id entry if not exists
-    if entity_id not in hass.data[DOMAIN]:
-        hass.data[DOMAIN][entity_id] = {}
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN].setdefault(entity_id, {})
 
     entry = hass.data[DOMAIN][entity_id]
 
-    # Create coordinator for grouping (only for vacuum platform)
-    coordinator = ZoneCoordinator(hass, entity_id)
+    # Create or retrieve coordinator
+    if "coordinator" not in entry:
+        # First platform to load (usually vacuum) creates the coordinator
+        coordinator = ZoneCoordinator(hass, entity_id)
+        entry["coordinator"] = coordinator
+    else:
+        coordinator = entry["coordinator"]
 
-    # Store coordinator
-    entry["coordinator"] = coordinator
-
-    # Create virtual vacuums
+    # Create virtual vacuums for vacuum platform
     entities = [
         ZoneVacuum(name, config, coordinator, entity_id, i)
         for i, (name, config) in enumerate(discovery_info["zones"].items())
     ]
-
-    # Create binary sensor for coordinator pending state
-    binary_sensor = ZoneCoordinatorIsPending(coordinator, entity_id)
-    entities.append(binary_sensor)
 
     async_add_entities(entities)
 
@@ -340,6 +335,7 @@ class ZoneCoordinatorIsPending(BinarySensorEntity):
 
     def __init__(self, coordinator, parent_entity_id):
         """Initialize the binary sensor."""
+        self._attr_device_class = BinarySensorDeviceClass.RUNNING
         self.coordinator = coordinator
         self.parent_entity_id = parent_entity_id
         self._attr_unique_id = f"{parent_entity_id}_pending"
