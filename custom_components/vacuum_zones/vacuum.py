@@ -156,6 +156,15 @@ class ZoneCoordinator:
         # Удалить дубликаты и отсортировать
         unique_rooms = sorted(set(all_rooms))
 
+        vacuum_state = self.hass.states.get(self.vacuum_entity_id)
+        # Получить последовательность комнат из настроек пылесоса
+        if vacuum_state and "cleaning_sequence" in vacuum_state.attributes:
+            cleaning_sequence = vacuum_state.attributes.get("cleaning_sequence")
+            unique_rooms = [
+                room_id for room_id in cleaning_sequence
+                if room_id in unique_rooms
+            ]
+
         # Определить сценарий
         if len(cleaning_modes) == 1:
             # Все cleaning_mode одинаковые
