@@ -239,51 +239,52 @@ class ZoneCoordinator:
         """Установить режим уборки через селекторы."""
         if cleaning_mode in ("routine_cleaning", "deep_cleaning"):
             # Установить режим Clean Genius
-            await self.hass.services.async_call(
-                "select",
-                "select_option",
-                {
-                    ATTR_ENTITY_ID: f"select.{self.prefix}_cleangenius",
-                    "option": cleaning_mode,
-                },
-                blocking=True,
-            )
-            await self.hass.services.async_call(
-                "select",
-                "select_option",
-                {
-                    ATTR_ENTITY_ID: f"select.{self.prefix}_cleangenius_mode",
-                    "option": "vacuum_and_mop",
-                },
-                blocking=True,
-            )
+            self._set_select_option(f"select.{self.prefix}_cleangenius", cleaning_mode)
+            self._set_select_option(f"select.{self.prefix}_cleangenius_mode", vacuum_and_mop)
             _LOGGER.debug("Activated cleangenius %s", cleaning_mode)
         else:
             # Установить обычный режим уборки
             await self._turn_off_cleangenius()
-            await self.hass.services.async_call(
-                "select",
-                "select_option",
-                {
-                    ATTR_ENTITY_ID: f"select.{self.prefix}_cleaning_mode",
-                    "option": cleaning_mode,
-                },
-                blocking=True,
-            )
+            self._set_select_option(f"select.{self.prefix}_cleaning_mode", cleaning_mode)
             _LOGGER.debug("Activated cleaning mode %s", cleaning_mode)
 
     async def _turn_off_cleangenius(self):
         """Выключить Clean Genius."""
-        await self.hass.services.async_call(
-            "select",
-            "select_option",
-            {
-                ATTR_ENTITY_ID: f"select.{self.prefix}_cleangenius",
-                "option": "off",
-            },
-            blocking=True,
-        )
+        self._set_select_option(f"select.{self.prefix}_cleangenius", "off")
         _LOGGER.debug("Turned off cleangenius")
+
+    def _fill_room_to_mode_mapping(self, room, cleaning_mode, room_to_mode):
+        """Добавить комнату (или список комнат) в mapping room->cleaning_mode.
+        """
+        def add_single_room(r):
+            if r in room_to_mode and room_to_mode[r] != cleaning_mode:
+                _LOGGER.warning(
+                    "Room %s has conflicting cleaning modes: %s vs %s. Using %s",
+                    r, room_to_mode[r], cleaning_mode, cleaning_mode
+                )
+            room_to_mode[r] = cleaning_mode
+
+        if isinstance(room, list):
+            for r in room:
+                add_single_room(r)
+        else:
+            add_single_room(room)
+
+    async def _set_select_option(self, entity_id, option):
+        """Установить опцию select"""
+        if self.hass.states.get(entity_id):
+            await self.hass.services.async_call(
+                "select",
+                "select_option",
+                {
+                    ATTR_ENTITY_ID: entity_id,
+                    "option": option,
+                },
+                blocking=True,
+            )
+            _LOGGER.debug("Set option: %s to entity: %s", option, entity_id)
+        else:
+            _LOGGER.warning("Entity %s not found", entity_id)
 
     async def _set_customized_room_settings(self, rooms):
         """Установить настройки для каждой комнаты в режиме кастомной уборки.
@@ -298,21 +299,7 @@ class ZoneCoordinator:
         for cleaning_mode, zones in self.pending_groups.items():
             for zone in zones:
                 room = zone.room
-                if isinstance(room, list):
-                    for r in room:
-                        if r in room_to_mode and room_to_mode[r] != cleaning_mode:
-                            _LOGGER.warning(
-                                "Room %s has conflicting cleaning modes: %s vs %s. Using %s",
-                                r, room_to_mode[r], cleaning_mode, cleaning_mode
-                            )
-                        room_to_mode[r] = cleaning_mode
-                else:
-                    if room in room_to_mode and room_to_mode[room] != cleaning_mode:
-                        _LOGGER.warning(
-                            "Room %s has conflicting cleaning modes: %s vs %s. Using %s",
-                            room, room_to_mode[room], cleaning_mode, cleaning_mode
-                        )
-                    room_to_mode[room] = cleaning_mode
+                self._fill_room_to_mode_mapping(room, cleaning_mode, room_to_mode)
 
         # Установить настройки для каждой комнаты
         for room in rooms:
@@ -335,35 +322,11 @@ class ZoneCoordinator:
 
             # Установить режим уборки для комнаты
             mode_entity_id = f"select.{self.prefix}_room_{room}_cleaning_mode"
-            if self.hass.states.get(mode_entity_id):
-                await self.hass.services.async_call(
-                    "select",
-                    "select_option",
-                    {
-                        ATTR_ENTITY_ID: mode_entity_id,
-                        "option": room_cleaning_mode,
-                    },
-                    blocking=True,
-                )
-                _LOGGER.debug("Set room %s cleaning mode to %s", room, room_cleaning_mode)
-            else:
-                _LOGGER.warning("Entity %s not found", mode_entity_id)
+            await self._set_select_option(mode_entity_id, room_cleaning_mode)
 
             # Установить количество повторов для комнаты
             times_entity_id = f"select.{self.prefix}_room_{room}_cleaning_times"
-            if self.hass.states.get(times_entity_id):
-                await self.hass.services.async_call(
-                    "select",
-                    "select_option",
-                    {
-                        ATTR_ENTITY_ID: times_entity_id,
-                        "option": cleaning_times,
-                    },
-                    blocking=True,
-                )
-                _LOGGER.debug("Set room %s cleaning times to %s", room, cleaning_times)
-            else:
-                _LOGGER.warning("Entity %s not found", times_entity_id)
+            await self._set_select_option(times_entity_id, cleaning_times)
 
 async def async_setup_platform(hass, _, async_add_entities, discovery_info=None):
     entity_id: str = discovery_info["entity_id"]
