@@ -148,6 +148,7 @@ class ZoneCoordinator:
             cleaning_modes.add(cleaning_mode)
             for zone in zones:
                 room = zone.room
+                zone.async_stop()
                 if isinstance(room, list):
                     all_rooms.extend(room)
                 else:
@@ -393,7 +394,6 @@ async def async_setup_platform(hass, _, async_add_entities, discovery_info=None)
 
 
 class ZoneVacuum(StateVacuumEntity):
-    _attr_state = STATE_IDLE
     _attr_supported_features = VacuumEntityFeature.START | VacuumEntityFeature.STOP
 
     def __init__(
@@ -404,6 +404,7 @@ class ZoneVacuum(StateVacuumEntity):
             parent_id: str,
     ):
         self._attr_name = config.pop("name", name)
+        self._cleaning = False
         self.parent_id = parent_id
         self.coordinator = coordinator
 
@@ -414,6 +415,12 @@ class ZoneVacuum(StateVacuumEntity):
         # Проверка обязательного параметра room
         if self.room is None:
             raise ValueError(f"Zone '{name}' must have 'room' parameter")
+
+    @property
+    def activity(self) -> VacuumActivity:
+        if self._cleaning:
+            return VacuumActivity.CLEANING
+        return VacuumActivity.IDLE
 
     @property
     def vacuum_entity_id(self) -> str:
@@ -427,12 +434,15 @@ class ZoneVacuum(StateVacuumEntity):
     async def async_start(self):
         """Запустить виртуальный пылесос - добавить в группу координатора."""
         _LOGGER.debug("Vacuum start request: %s", self._attr_name)
+        self._cleaning = True
+        self.async_write_ha_state()
         await self.coordinator.schedule_cleaning(self)
 
     async def async_stop(self, **kwargs):
-        """Остановка виртуального пылесоса не поддерживается в новой архитектуре."""
+        """Остановка виртуального пылесоса."""
         _LOGGER.debug("Vacuum stop request: %s", self._attr_name)
-        await self.coordinator.check_and_stop_vacuum()
+        self._cleaning = False
+        self.async_write_ha_state()
 
 class ZoneCoordinatorIsPending(BinarySensorEntity):
     """Binary sensor indicating if coordinator has pending cleaning groups."""
