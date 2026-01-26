@@ -43,15 +43,14 @@ class ZoneCoordinator:
         self.hass = hass
         self.vacuum_entity_id = vacuum_entity_id
         self.prefix = vacuum_entity_id.split('.', 1)[1] # for example x40_ultra_complete
-        self.pending_groups = {}  # cleaning_mode -> list of ZoneVacuum
         self.pending_zones_ordered = []  # ordered list of ZoneVacuum
         self.timer_handle = None
-        self.grouping_timeout = start_delay
+        self.start_delay = start_delay
         self.test_mode = test_mode
         self._listeners = []  # Callback functions for state changes
 
     def add_listener(self, callback):
-        """Добавить слушатель для уведомлений об изменении pending_groups."""
+        """Добавить слушатель для уведомлений об изменении pending zones."""
         self._listeners.append(callback)
 
     def remove_listener(self, callback):
@@ -65,17 +64,12 @@ class ZoneCoordinator:
             callback()
 
     async def schedule_cleaning(self, zone_vacuum):
-        """Добавить виртуальный пылесос в группу и запустить/сбросить таймер."""
-        cleaning_mode = zone_vacuum.cleaning_mode
-
-        if cleaning_mode not in self.pending_groups:
-            self.pending_groups[cleaning_mode] = []
-        self.pending_groups[cleaning_mode].append(zone_vacuum)
+        """Добавить виртуальный пылесос в очередь и запустить/сбросить таймер."""
         self.pending_zones_ordered.append(zone_vacuum)
 
         """Пропускаем планирование из запускаем задачу мгновенно если delay равен 0."""
-        if self.grouping_timeout == 0:
-            self._execute_group()
+        if self.start_delay == 0:
+            self._execute_tasks()
             return
 
         self._notify_listeners()
@@ -87,24 +81,24 @@ class ZoneCoordinator:
             except Exception:
                 pass  # Игнорируем ошибки отмены
 
-        self.timer_handle = asyncio.create_task(self._execute_group_after_timeout())
+        self.timer_handle = asyncio.create_task(self._execute_tasks_after_timeout())
 
-    async def _execute_group_after_timeout(self):
-        """Выполнить группу после таймаута."""
+    async def _execute_tasks_after_timeout(self):
+        """Выполнить задачи после таймаута."""
         try:
-            await asyncio.sleep(self.grouping_timeout)
-            await self._execute_group()
+            await asyncio.sleep(self.start_delay)
+            await self._execute_tasks()
         except asyncio.CancelledError:
             # Таймер был отменен - это нормально
             raise
         except Exception as e:
             _LOGGER.error("Error executing group: %s", e)
-            # Очищаем pending_groups при ошибке
+            # Очищаем pending zones при ошибке
             self._rollback_to_initial_state()
 
-    async def _execute_group(self):
-        """Выполнить накопленные группы."""
-        if not self.pending_groups:
+    async def _execute_tasks(self):
+        """Выполнить накопленные команды."""
+        if not self.pending_zones_ordered:
             return
 
         try:
@@ -120,7 +114,7 @@ class ZoneCoordinator:
         except Exception as e:
             _LOGGER.error("Error executing cleaning group: %s", e)
         finally:
-            # Всегда очищаем pending_groups после выполнения или ошибки
+            # Всегда очищаем pending zones после выполнения или ошибки
             self._rollback_to_initial_state()
 
     async def check_and_stop_vacuum(self):
@@ -137,7 +131,6 @@ class ZoneCoordinator:
                 )
 
     async def _rollback_to_initial_state(self):
-        self.pending_groups.clear()
         for zone in self.pending_zones_ordered:
             zone.async_stop()
         self.pending_zones_ordered.clear()
@@ -150,14 +143,13 @@ class ZoneCoordinator:
         all_rooms = []
         cleaning_modes = set()
 
-        for cleaning_mode, zones in self.pending_groups.items():
-            cleaning_modes.add(cleaning_mode)
-            for zone in zones:
-                room = zone.room
-                if isinstance(room, list):
-                    all_rooms.extend(room)
-                else:
-                    all_rooms.append(room)
+        for zone in self.pending_zones_ordered:
+            cleaning_modes.add(zone.cleaning_mode)
+            room = zone.room
+            if isinstance(room, list):
+                all_rooms.extend(room)
+            else:
+                all_rooms.append(room)
 
         # Удалить дубликаты и отсортировать
         unique_rooms = sorted(set(all_rooms))
@@ -435,7 +427,7 @@ class ZoneCoordinatorIsPending(BinarySensorEntity):
     @property
     def is_on(self) -> bool:
         """Return True if coordinator has pending groups."""
-        return len(self.coordinator.pending_groups) > 0
+        return len(self.coordinator.pending_zones_ordered) > 0
 
     @property
     def icon(self) -> str:
