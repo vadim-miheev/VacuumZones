@@ -44,6 +44,7 @@ class ZoneCoordinator:
         self.vacuum_entity_id = vacuum_entity_id
         self.prefix = vacuum_entity_id.split('.', 1)[1] # for example x40_ultra_complete
         self.pending_groups = {}  # cleaning_mode -> list of ZoneVacuum
+        self.pending_zones_ordered = []  # ordered list of ZoneVacuum
         self.timer_handle = None
         self.grouping_timeout = start_delay
         self.test_mode = test_mode
@@ -70,8 +71,9 @@ class ZoneCoordinator:
         if cleaning_mode not in self.pending_groups:
             self.pending_groups[cleaning_mode] = []
         self.pending_groups[cleaning_mode].append(zone_vacuum)
+        self.pending_zones_ordered.append(zone_vacuum)
 
-        """Пропускаем планирование из запускаем задачу мгновенно если delay равен 0"""
+        """Пропускаем планирование из запускаем задачу мгновенно если delay равен 0."""
         if self.grouping_timeout == 0:
             self._execute_group()
             return
@@ -148,7 +150,6 @@ class ZoneCoordinator:
             cleaning_modes.add(cleaning_mode)
             for zone in zones:
                 room = zone.room
-                zone.async_stop()
                 if isinstance(room, list):
                     all_rooms.extend(room)
                 else:
@@ -294,12 +295,12 @@ class ZoneCoordinator:
         2. Количество повторов (1x или 2x)
         """
 
-        # Построить mapping room -> cleaning_mode из pending_groups
+        # Построить mapping room -> cleaning_mode из pending_zones_ordered (учитывает порядок добавления)
         room_to_mode = {}
-        for cleaning_mode, zones in self.pending_groups.items():
-            for zone in zones:
-                room = zone.room
-                self._fill_room_to_mode_mapping(room, cleaning_mode, room_to_mode)
+        for zone in self.pending_zones_ordered:
+            room = zone.room
+            cleaning_mode = zone.cleaning_mode
+            self._fill_room_to_mode_mapping(room, cleaning_mode, room_to_mode)
 
         # Установить настройки для каждой комнаты
         for room in rooms:
