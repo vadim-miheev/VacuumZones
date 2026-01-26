@@ -100,9 +100,7 @@ class ZoneCoordinator:
         except Exception as e:
             _LOGGER.error("Error executing group: %s", e)
             # Очищаем pending_groups при ошибке
-            self.pending_groups.clear()
-            self.timer_handle = None
-            self._notify_listeners()
+            self._rollback_to_initial_state()
 
     async def _execute_group(self):
         """Выполнить накопленные группы."""
@@ -123,9 +121,7 @@ class ZoneCoordinator:
             _LOGGER.error("Error executing cleaning group: %s", e)
         finally:
             # Всегда очищаем pending_groups после выполнения или ошибки
-            self.pending_groups.clear()
-            self.timer_handle = None
-            self._notify_listeners()
+            self._rollback_to_initial_state()
 
     async def check_and_stop_vacuum(self):
         """Остановить пылесос если он в состоянии cleaning."""
@@ -139,6 +135,14 @@ class ZoneCoordinator:
                     {ATTR_ENTITY_ID: self.vacuum_entity_id},
                     blocking=True,
                 )
+
+    async def _rollback_to_initial_state(self):
+        self.pending_groups.clear()
+        for zone in self.pending_zones_ordered:
+            zone.async_stop()
+        self.pending_zones_ordered.clear()
+        self.timer_handle = None
+        self._notify_listeners()
 
     async def _prepare_service_data(self):
         """Подготовить данные для сервисного вызова."""
