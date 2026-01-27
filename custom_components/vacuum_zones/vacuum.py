@@ -132,7 +132,7 @@ class ZoneCoordinator:
 
     async def _rollback_to_initial_state(self):
         for zone in self.pending_zones_ordered:
-            zone.async_stop()
+            await zone.async_stop()
         self.pending_zones_ordered.clear()
         self.timer_handle = None
         self._notify_listeners()
