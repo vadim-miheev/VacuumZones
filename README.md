@@ -14,13 +14,11 @@ This component creates a virtual vacuum cleaner for each of your rooms.
 
 By adding these vacuums to your voice assistant, you can give voice commands, like "clean bedroom". If your voice assistant supports multiple device commands - you can say "clean up the hall and under the table".
 
-All cleaning commands are **grouped within 2 seconds**. When multiple virtual vacuums are started within this time window, they are grouped by cleaning mode and executed together.
+By default all cleaning commands are **grouped within 10 seconds** (adjustable). When multiple virtual vacuums are started within this time window, they are grouped and executed together.
 
 **Grouping logic:**
 - **Same cleaning mode**: All rooms are cleaned using the specified cleaning mode
-- **Different cleaning modes**: Customized cleaning is activated and rooms are cleaned together
-
-Virtual vacuum entities are always in the `idle` state. The component stops the main vacuum if it's currently cleaning before executing new commands.
+- **Different cleaning modes**: Customized cleaning is activated and rooms are cleaned together with different preferences
 
 ## Installation
 
@@ -43,10 +41,10 @@ Configure each virtual vacuum with a room number and optional cleaning mode.
 `configuration.yaml` example:
 
 ```yaml
-# available cleaning_modes:
-# sweeping sweeping_and_mopping routine_cleaning deep_cleaning
 vacuum_zones:
   entity_id: vacuum.x40_ultra_complete    # change to your Dreame vacuum entity
+  start_delay: 10                         # delay between zone start command and vacuum start. Allow to group a
+                                          # few voice commands to one cleaning task. Set to 0 for instant start
   zones:
     Bedroom Dry:                          # virtual vacuum name
       room: 1                             # single room number
@@ -55,14 +53,12 @@ vacuum_zones:
       room: 1                             # same room number
       cleaning_mode: sweeping_and_mopping # different mode
     Kitchen Dry:
-      room: 2
+      room: [2,3]
     Kitchen Combined:
-      room: 2
+      room: [2,3]
       cleaning_mode: routine_cleaning     # cleangenius mode
+  test_mode: false                        # prevents real vacuum start. Use for testing
 ```
-
-**Note:** The `room` parameter accepts either a single integer or a list of integers. All cleaning commands started within 2 seconds are grouped according to the grouping logic described above.
-
 ## Useful links
 
 - [Dreame Vacuum Integration](https://github.com/Tasshack/dreame-vacuum) - Home Assistant integration for Dreame vacuums

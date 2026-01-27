@@ -7,10 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is a **Home Assistant custom component** called **VacuumZones**. It enables zone/room cleaning control for Dreame vacuum cleaners with voice assistant support (Apple Siri, Google Assistant, Yandex Alice). The component creates virtual vacuum entities for each zone/room, allowing voice commands like "clean bedroom" or "clean hall and kitchen".
 
 **Key Features:**
-- Group-based cleaning (commands within 2-second window are grouped and executed together)
+- Group-based cleaning (commands within 10-second window are grouped and executed together)
 - Dreame vacuum platform support only (version 2.0.0+)
 - Multiple cleaning modes: `sweeping`, `sweeping_and_mopping`, `routine_cleaning`, `deep_cleaning`
-- Simplified state management: all virtual vacuums always in `idle` state
 - Voice assistant integration through individual virtual vacuum entities
 
 **Note:** Version 2.0.0+ only supports Dreame vacuums. Support for Xiaomi and Roborock vacuums has been removed.
@@ -29,15 +28,13 @@ This is a **Home Assistant custom component** called **VacuumZones**. It enables
 
 2. **`custom_components/vacuum_zones/vacuum.py`**
    - **`ZoneCoordinator` class**: Manages grouping of cleaning commands
-     - Groups virtual vacuum start commands within 2-second window
+     - Groups virtual vacuum start commands within 10-second window
      - Handles different cleaning modes (same vs. different modes)
      - Stops vacuum if currently cleaning before new commands
      - Activates customized cleaning when different modes are grouped
 
    - **`ZoneVacuum` class**: Extends `StateVacuumEntity`
      - Creates virtual vacuum entities for each zone
-     - Always in `idle` state (no state transitions in v2.0.0+)
-     - Supports only `START` feature (no stop/pause for individual zones)
      - Delegates cleaning to `ZoneCoordinator` via `schedule_cleaning()`
 
 3. **`custom_components/vacuum_zones/manifest.json`**
@@ -47,7 +44,7 @@ This is a **Home Assistant custom component** called **VacuumZones**. It enables
 
 ### Grouping Logic
 
-The component uses a 2-second grouping window for cleaning commands:
+The component uses a 10-second grouping window for cleaning commands:
 
 1. **Same cleaning mode**: All rooms cleaned with specified mode
    - Example: "clean bedroom" and "clean kitchen" (both `sweeping`) → rooms 1 and 2 cleaned together in `sweeping` mode
@@ -60,6 +57,8 @@ The component uses a 2-second grouping window for cleaning commands:
 ```yaml
 vacuum_zones:
   entity_id: vacuum.x40_ultra_complete    # Your Dreame vacuum entity
+  test_mode: true
+  start_delay: 10
   zones:
     Bedroom Dry:                          # Virtual vacuum name
       room: 1                             # Room number(s) - int or list
@@ -77,8 +76,6 @@ vacuum_zones:
 
 ### State Management (v2.0.0+)
 
-- **Virtual vacuums**: Always in `idle` state
-- **No individual control**: Cannot stop/pause individual virtual vacuums
 - **Physical vacuum control**: Coordinator stops vacuum if cleaning before new commands
 - **Service calls**: Uses `dreame_vacuum.vacuum_clean_segment` service
 
@@ -149,8 +146,6 @@ The codebase contains Russian comments (maintainer's language). Key terms:
 ## Development Notes
 
 1. **Architecture Evolution**: Version 2.0.0 changed from queue-based to group-based architecture:
-   - **Before**: Sequential queue with state transitions (`cleaning`, `paused`, `idle`)
-   - **After**: Command grouping with immediate execution, all virtual vacuums `idle`
 
 2. **Platform Specialization**: Version 2.0.0 dropped Xiaomi/Roborock support, focusing only on Dreame vacuums.
 
