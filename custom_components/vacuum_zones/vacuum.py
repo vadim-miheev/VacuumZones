@@ -69,7 +69,7 @@ class ZoneCoordinator:
 
         """Пропускаем планирование из запускаем задачу мгновенно если delay равен 0."""
         if self.start_delay == 0:
-            self._execute_tasks()
+            await self._execute_tasks()
             return
 
         self._notify_listeners()
@@ -94,7 +94,7 @@ class ZoneCoordinator:
         except Exception as e:
             _LOGGER.error("Error executing group: %s", e)
             # Очищаем pending zones при ошибке
-            self._rollback_to_initial_state()
+            await self._rollback_to_initial_state()
 
     async def _execute_tasks(self):
         """Выполнить накопленные команды."""
@@ -115,7 +115,7 @@ class ZoneCoordinator:
             _LOGGER.error("Error executing cleaning group: %s", e)
         finally:
             # Всегда очищаем pending zones после выполнения или ошибки
-            self._rollback_to_initial_state()
+            await self._rollback_to_initial_state()
 
     async def check_and_stop_vacuum(self):
         """Остановить пылесос если он в состоянии cleaning."""
@@ -236,18 +236,18 @@ class ZoneCoordinator:
         """Установить режим уборки через селекторы."""
         if cleaning_mode in ("routine_cleaning", "deep_cleaning"):
             # Установить режим Clean Genius
-            self._set_select_option(f"select.{self.prefix}_cleangenius", cleaning_mode)
-            self._set_select_option(f"select.{self.prefix}_cleangenius_mode", vacuum_and_mop)
+            await self._set_select_option(f"select.{self.prefix}_cleangenius", cleaning_mode)
+            await self._set_select_option(f"select.{self.prefix}_cleangenius_mode", "vacuum_and_mop")
             _LOGGER.debug("Activated cleangenius %s", cleaning_mode)
         else:
             # Установить обычный режим уборки
             await self._turn_off_cleangenius()
-            self._set_select_option(f"select.{self.prefix}_cleaning_mode", cleaning_mode)
+            await self._set_select_option(f"select.{self.prefix}_cleaning_mode", cleaning_mode)
             _LOGGER.debug("Activated cleaning mode %s", cleaning_mode)
 
     async def _turn_off_cleangenius(self):
         """Выключить Clean Genius."""
-        self._set_select_option(f"select.{self.prefix}_cleangenius", "off")
+        await self._set_select_option(f"select.{self.prefix}_cleangenius", "off")
         _LOGGER.debug("Turned off cleangenius")
 
     def _fill_room_to_mode_mapping(self, room, cleaning_mode, room_to_mode):
