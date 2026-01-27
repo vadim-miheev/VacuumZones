@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import enum
 
 from homeassistant.components.vacuum import (
     StateVacuumEntity,
@@ -35,6 +36,14 @@ except ImportError:
         STATE_IDLE,
     )
 
+class DreameCleaningMode(enum.Enum):
+    DRY = "sweeping",
+    COMBINED = "sweeping_and_mopping",
+    SEQUENTIAL = "mopping_after_sweeping",
+    CLEAN_GENIUS = "routine_cleaning",
+    CLEAN_GENIUS_DEEP = "deep_cleaning",
+    SEQUENTIAL_CLEAN_GENIUS = "mopping_after_sweeping_genius",
+    SEQUENTIAL_CLEAN_GENIUS_DEEP = "mopping_after_sweeping_genius_deep",
 
 class ZoneCoordinator:
     """Координатор для группировки запусков виртуальных пылесосов."""
@@ -163,11 +172,20 @@ class ZoneCoordinator:
                 if room_id in unique_rooms
             ]
 
+        use_customized_cleaning = False
         # Определить сценарий
         if len(cleaning_modes) == 1:
             # Все cleaning_mode одинаковые
             cleaning_mode = next(iter(cleaning_modes))
-            use_customized_cleaning = False
+        elif DreameCleaningMode.SEQUENTIAL in cleaning_modes:
+            # Поэтапная уборка
+            cleaning_mode = DreameCleaningMode.SEQUENTIAL
+        elif DreameCleaningMode.SEQUENTIAL_CLEAN_GENIUS in cleaning_modes:
+            # Поэтапная уборка в режиме CleanGenius
+            if DreameCleaningMode.CLEAN_GENIUS_DEEP in cleaning_modes:
+                cleaning_mode = DreameCleaningMode.SEQUENTIAL_CLEAN_GENIUS_DEEP
+            else:
+                cleaning_mode = DreameCleaningMode.SEQUENTIAL_CLEAN_GENIUS
         else:
             # Разные cleaning_mode
             use_customized_cleaning = True
@@ -234,11 +252,28 @@ class ZoneCoordinator:
 
     async def _set_cleaning_mode(self, cleaning_mode):
         """Установить режим уборки через селекторы."""
-        if cleaning_mode in ("routine_cleaning", "deep_cleaning"):
+        clean_genius_modes = [
+            DreameCleaningMode.CLEAN_GENIUS,
+            DreameCleaningMode.CLEAN_GENIUS_DEEP,
+            DreameCleaningMode.SEQUENTIAL_CLEAN_GENIUS,
+            DreameCleaningMode.SEQUENTIAL_CLEAN_GENIUS_DEEP,
+        ]
+
+        if cleaning_mode in clean_genius_modes:
             # Установить режим Clean Genius
-            await self._set_select_option(f"select.{self.prefix}_cleangenius", cleaning_mode)
-            await self._set_select_option(f"select.{self.prefix}_cleangenius_mode", "vacuum_and_mop")
-            _LOGGER.debug("Activated cleangenius %s", cleaning_mode)
+            clean_genius = cleaning_mode
+            clean_genius_mode = "vacuum_and_mop"
+
+            if clean_genius == DreameCleaningMode.SEQUENTIAL_CLEAN_GENIUS:
+                clean_genius = DreameCleaningMode.CLEAN_GENIUS
+                clean_genius_mode = "mop_after_vacuum"
+            elif clean_genius == DreameCleaningMode.SEQUENTIAL_CLEAN_GENIUS_DEEP:
+                clean_genius = DreameCleaningMode.CLEAN_GENIUS_DEEP
+                clean_genius_mode = "mop_after_vacuum"
+
+            await self._set_select_option(f"select.{self.prefix}_cleangenius", clean_genius)
+            await self._set_select_option(f"select.{self.prefix}_cleangenius_mode", clean_genius_mode)
+            _LOGGER.debug("Activated CleanGenius %s with mod %s", clean_genius, clean_genius_mode)
         else:
             # Установить обычный режим уборки
             await self._turn_off_cleangenius()
@@ -306,13 +341,13 @@ class ZoneCoordinator:
                 continue
 
             # Определить режим уборки для комнаты
-            if cleaning_mode == "sweeping":
-                room_cleaning_mode = "sweeping"
+            if cleaning_mode == DreameCleaningMode.DRY:
+                room_cleaning_mode = DreameCleaningMode.DRY
             else:  # sweeping_and_mopping, routine_cleaning, deep_cleaning
-                room_cleaning_mode = "sweeping_and_mopping"
+                room_cleaning_mode = DreameCleaningMode.COMBINED
 
             # Определить количество повторов для комнаты
-            if cleaning_mode == "deep_cleaning":
+            if cleaning_mode == DreameCleaningMode.CLEAN_GENIUS_DEEP:
                 cleaning_times = "2x"
             else:
                 cleaning_times = "1x"
@@ -370,7 +405,7 @@ class ZoneVacuum(StateVacuumEntity):
 
         # Извлечение room и cleaning_mode из конфигурации
         self.room = config.get("room")
-        self.cleaning_mode = config.get("cleaning_mode", "sweeping")
+        self.cleaning_mode = config.get("cleaning_mode", DreameCleaningMode.DRY)
 
         # Проверка обязательного параметра room
         if self.room is None:
