@@ -14,11 +14,13 @@ This component creates a virtual vacuum cleaner for each of your rooms.
 
 By adding these vacuums to your voice assistant, you can give voice commands, like "clean bedroom". If your voice assistant supports multiple device commands - you can say "clean up the hall and under the table".
 
-By default all cleaning commands are **grouped within 10 seconds** (adjustable). When multiple virtual vacuums are started within this time window, they are grouped and executed together.
+By default, all cleaning commands are **grouped within 10 seconds** (adjustable). When multiple virtual vacuums are started within this time window, they are grouped and executed together.
 
 **Grouping logic:**
 - **Same cleaning mode**: All rooms are cleaned using the specified cleaning mode
 - **Different cleaning modes**: Customized cleaning is activated and rooms are cleaned together with different preferences
+- **Different cleaning modes and Mop after Vac mode**: Because of Dreame software restrictions it's impossible to use "Mop after Vac" in custom mode. Because of this starting "Mop after Vac" in any room will switch all other selected rooms to this mode  
+- **Mop after Vac mode and Deep cleaning**: If your vacuum support this feature, you can activate CleanGenius Deep clean in "Mop after Vac" mode by starting two virtual vacuums in one room. Look "Available cleaning modes" section for details
 
 ## Installation
 
@@ -32,11 +34,15 @@ By default all cleaning commands are **grouped within 10 seconds** (adjustable).
 
 Configure each virtual vacuum with a room number and optional cleaning mode.
 
-**Available cleaning modes:**
-- `sweeping` (default)
-- `sweeping_and_mopping`
-- `routine_cleaning`
-- `deep_cleaning`
+**Available cleaning modes (if your vacuum support):**
+- `sweeping` (default) - Vac only
+- `sweeping_and_mopping` - Vac & Mop
+- `mopping_after_sweeping` - Mop after Vac
+- `routine_cleaning` - CleanGenius
+- `deep_cleaning` - CleanGenius Deep
+- `mopping_after_sweeping_genius` - CleanGenius (Mop after Vac)
+
+Note: for using CleanGenius Deep (Mop after Vac) activate `mopping_after_sweeping_genius` and `deep_cleaning` simultaneously
 
 `configuration.yaml` example:
 
@@ -44,7 +50,7 @@ Configure each virtual vacuum with a room number and optional cleaning mode.
 vacuum_zones:
   entity_id: vacuum.x40_ultra_complete    # change to your Dreame vacuum entity
   start_delay: 10                         # delay between zone start command and vacuum start. Allow to group a
-                                          # few voice commands to one cleaning task. Set to 0 for instant start
+                                          # few voice commands to single cleaning task. Set to 0 for instant start
   zones:
     Bedroom Dry:                          # virtual vacuum name
       room: 1                             # single room number
@@ -56,7 +62,7 @@ vacuum_zones:
       room: [2,3]
     Kitchen Combined:
       room: [2,3]
-      cleaning_mode: routine_cleaning     # cleangenius mode
+      cleaning_mode: routine_cleaning     # CleanGenius mode
   test_mode: false                        # prevents real vacuum start. Use for testing
 ```
 ## Useful links
