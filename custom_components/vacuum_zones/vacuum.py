@@ -72,6 +72,20 @@ class ZoneCoordinator:
         for callback in self._listeners:
             callback()
 
+    def _cancel_timer(self):
+        """Отменить таймер группировки и очистить handle."""
+        if self.timer_handle:
+            try:
+                self.timer_handle.cancel()
+            except Exception:
+                pass  # Игнорируем ошибки отмены
+            self.timer_handle = None
+
+    async def _restart_timer(self):
+        """Перезапустить таймер группировки: отменить старый и создать новую задачу."""
+        self._cancel_timer()
+        self.timer_handle = asyncio.create_task(self._execute_tasks_after_timeout())
+
     async def schedule_cleaning(self, zone_vacuum):
         """Добавить виртуальный пылесос в очередь и запустить/сбросить таймер."""
         self.pending_zones_ordered.append(zone_vacuum)
@@ -84,13 +98,7 @@ class ZoneCoordinator:
         self._notify_listeners()
 
         # Запустить/сбросить таймер группировки
-        if self.timer_handle:
-            try:
-                self.timer_handle.cancel()
-            except Exception:
-                pass  # Игнорируем ошибки отмены
-
-        self.timer_handle = asyncio.create_task(self._execute_tasks_after_timeout())
+        await self._restart_timer()
 
     async def remove_zone(self, zone_vacuum):
         """Удалить виртуальный пылесос из pending_zones_ordered."""
@@ -98,11 +106,7 @@ class ZoneCoordinator:
             self.pending_zones_ordered = [z for z in self.pending_zones_ordered if z != zone_vacuum]
             # Если список ожидания стал пустым, отменить таймер
             if not self.pending_zones_ordered and self.timer_handle:
-                try:
-                    self.timer_handle.cancel()
-                except Exception:
-                    pass  # Игнорируем ошибки отмены
-                self.timer_handle = None
+                self._cancel_timer()
             self._notify_listeners()
 
     async def _execute_tasks_after_timeout(self):
@@ -158,7 +162,7 @@ class ZoneCoordinator:
         for zone in zones_to_stop:
             await zone.async_stop()
         self.pending_zones_ordered.clear()
-        self.timer_handle = None
+        self._cancel_timer()
         self._notify_listeners()
 
     async def _prepare_service_data(self):
