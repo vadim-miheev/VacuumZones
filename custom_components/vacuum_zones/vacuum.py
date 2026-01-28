@@ -1,6 +1,6 @@
 import asyncio
 import logging
-import enum
+from enum import Enum
 
 from homeassistant.components.vacuum import (
     StateVacuumEntity,
@@ -36,14 +36,14 @@ except ImportError:
         STATE_IDLE,
     )
 
-class DreameCleaningMode(enum.Enum):
-    DRY = "sweeping",
-    COMBINED = "sweeping_and_mopping",
-    SEQUENTIAL = "mopping_after_sweeping",
-    CLEAN_GENIUS = "routine_cleaning",
-    CLEAN_GENIUS_DEEP = "deep_cleaning",
-    SEQUENTIAL_CLEAN_GENIUS = "mopping_after_sweeping_genius",
-    SEQUENTIAL_CLEAN_GENIUS_DEEP = "mopping_after_sweeping_genius_deep",
+class DreameCleaningMode(Enum):
+    DRY = "sweeping"
+    COMBINED = "sweeping_and_mopping"
+    SEQUENTIAL = "mopping_after_sweeping"
+    CLEAN_GENIUS = "routine_cleaning"
+    CLEAN_GENIUS_DEEP = "deep_cleaning"
+    SEQUENTIAL_CLEAN_GENIUS = "mopping_after_sweeping_genius"
+    SEQUENTIAL_CLEAN_GENIUS_DEEP = "mopping_after_sweeping_genius_deep"
 
 class ZoneCoordinator:
     """Координатор для группировки запусков виртуальных пылесосов."""
@@ -261,14 +261,14 @@ class ZoneCoordinator:
 
         if cleaning_mode in clean_genius_modes:
             # Установить режим Clean Genius
-            clean_genius = cleaning_mode
+            clean_genius = cleaning_mode.value
             clean_genius_mode = "vacuum_and_mop"
 
-            if clean_genius == DreameCleaningMode.SEQUENTIAL_CLEAN_GENIUS:
-                clean_genius = DreameCleaningMode.CLEAN_GENIUS
+            if cleaning_mode == DreameCleaningMode.SEQUENTIAL_CLEAN_GENIUS:
+                clean_genius = DreameCleaningMode.CLEAN_GENIUS.value
                 clean_genius_mode = "mop_after_vacuum"
-            elif clean_genius == DreameCleaningMode.SEQUENTIAL_CLEAN_GENIUS_DEEP:
-                clean_genius = DreameCleaningMode.CLEAN_GENIUS_DEEP
+            elif cleaning_mode == DreameCleaningMode.SEQUENTIAL_CLEAN_GENIUS_DEEP:
+                clean_genius = DreameCleaningMode.CLEAN_GENIUS_DEEP.value
                 clean_genius_mode = "mop_after_vacuum"
 
             await self._set_select_option(f"select.{self.prefix}_cleangenius", clean_genius)
@@ -304,6 +304,10 @@ class ZoneCoordinator:
 
     async def _set_select_option(self, entity_id, option):
         """Установить опцию select"""
+        # Если передан enum member, берем его значение
+        if isinstance(option, Enum):
+            option = option.value
+
         if self.hass.states.get(entity_id):
             await self.hass.services.async_call(
                 "select",
@@ -405,7 +409,12 @@ class ZoneVacuum(StateVacuumEntity):
 
         # Извлечение room и cleaning_mode из конфигурации
         self.room = config.get("room")
-        self.cleaning_mode = config.get("cleaning_mode", DreameCleaningMode.DRY)
+
+        try:
+            self.cleaning_mode = DreameCleaningMode(config.get("cleaning_mode"))
+        except ValueError:
+            _LOGGER.warning("Invalid cleaning_mode '%s' for zone '%s'.", cleaning_mode_str, name)
+            self.cleaning_mode = DreameCleaningMode.DRY
 
         # Проверка обязательного параметра room
         if self.room is None:
