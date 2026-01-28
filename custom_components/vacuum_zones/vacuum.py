@@ -410,8 +410,9 @@ class ZoneVacuum(StateVacuumEntity):
         # Извлечение room и cleaning_mode из конфигурации
         self.room = config.get("room")
 
+        cleaning_mode_str = config.get("cleaning_mode", DreameCleaningMode.DRY.value)
         try:
-            self.cleaning_mode = DreameCleaningMode(config.get("cleaning_mode"))
+            self.cleaning_mode = DreameCleaningMode(cleaning_mode_str)
         except ValueError:
             _LOGGER.warning("Invalid cleaning_mode '%s' for zone '%s'.", cleaning_mode_str, name)
             self.cleaning_mode = DreameCleaningMode.DRY
