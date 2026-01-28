@@ -107,6 +107,8 @@ class ZoneCoordinator:
             # Если список ожидания стал пустым, отменить таймер
             if not self.pending_zones_ordered and self.timer_handle:
                 self._cancel_timer()
+            else:
+                self._restart_timer()
             self._notify_listeners()
 
     async def _execute_tasks_after_timeout(self):
