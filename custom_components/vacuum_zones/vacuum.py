@@ -83,6 +83,7 @@ class ZoneCoordinator:
 
     async def _restart_timer(self):
         """Перезапустить таймер группировки: отменить старый и создать новую задачу."""
+        _LOGGER.debug("Restarting grouping timer for %s seconds", self.start_delay)
         self._cancel_timer()
         self.timer_handle = asyncio.create_task(self._execute_tasks_after_timeout())
 
@@ -100,15 +101,17 @@ class ZoneCoordinator:
         # Запустить/сбросить таймер группировки
         await self._restart_timer()
 
-    async def remove_zone(self, zone_vacuum):
+    async def remove_zone(self, zone_vacuum, restart_timer=True):
         """Удалить виртуальный пылесос из pending_zones_ordered."""
         if zone_vacuum in self.pending_zones_ordered:
             self.pending_zones_ordered = [z for z in self.pending_zones_ordered if z != zone_vacuum]
             # Если список ожидания стал пустым, отменить таймер
             if not self.pending_zones_ordered and self.timer_handle:
+                _LOGGER.debug("Pending zones list empty, cancelling timer")
                 self._cancel_timer()
-            else:
-                self._restart_timer()
+            # Если после удаления зоны список не пуст, restart_timer=True и start_delay != 0 - перезапустить таймер
+            elif self.pending_zones_ordered and restart_timer and self.start_delay != 0:
+                await self._restart_timer()
             self._notify_listeners()
 
     async def _execute_tasks_after_timeout(self):
@@ -162,7 +165,7 @@ class ZoneCoordinator:
         # Создаем копию списка, чтобы избежать изменения во время итерации
         zones_to_stop = list(self.pending_zones_ordered)
         for zone in zones_to_stop:
-            await zone.async_stop()
+            await zone.async_stop(restart_timer=False)
         self.pending_zones_ordered.clear()
         self._cancel_timer()
         self._notify_listeners()
@@ -470,7 +473,8 @@ class ZoneVacuum(StateVacuumEntity):
         self._cleaning = False
         self.async_write_ha_state()
         # Удалить этот виртуальный пылесос из pending_zones_ordered координатора
-        await self.coordinator.remove_zone(self)
+        restart_timer = kwargs.get('restart_timer', True)
+        await self.coordinator.remove_zone(self, restart_timer)
 
 class ZoneCoordinatorIsPending(BinarySensorEntity):
     """Binary sensor indicating if coordinator has pending cleaning groups."""
