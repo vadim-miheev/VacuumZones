@@ -318,7 +318,7 @@ class ZoneCoordinator:
                 },
                 blocking=True,
             )
-            _LOGGER.debug("Set option: %s to entity: %s", option, entity_id)
+            _LOGGER.debug("Set option: %s to %s", entity_id, option)
         else:
             _LOGGER.warning("Entity %s not found", entity_id)
 
