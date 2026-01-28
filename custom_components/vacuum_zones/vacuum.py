@@ -92,6 +92,19 @@ class ZoneCoordinator:
 
         self.timer_handle = asyncio.create_task(self._execute_tasks_after_timeout())
 
+    async def remove_zone(self, zone_vacuum):
+        """Удалить виртуальный пылесос из pending_zones_ordered."""
+        if zone_vacuum in self.pending_zones_ordered:
+            self.pending_zones_ordered = [z for z in self.pending_zones_ordered if z != zone_vacuum]
+            # Если список ожидания стал пустым, отменить таймер
+            if not self.pending_zones_ordered and self.timer_handle:
+                try:
+                    self.timer_handle.cancel()
+                except Exception:
+                    pass  # Игнорируем ошибки отмены
+                self.timer_handle = None
+            self._notify_listeners()
+
     async def _execute_tasks_after_timeout(self):
         """Выполнить задачи после таймаута."""
         try:
@@ -140,7 +153,9 @@ class ZoneCoordinator:
                 )
 
     async def _rollback_to_initial_state(self):
-        for zone in self.pending_zones_ordered:
+        # Создаем копию списка, чтобы избежать изменения во время итерации
+        zones_to_stop = list(self.pending_zones_ordered)
+        for zone in zones_to_stop:
             await zone.async_stop()
         self.pending_zones_ordered.clear()
         self.timer_handle = None
@@ -448,6 +463,8 @@ class ZoneVacuum(StateVacuumEntity):
         _LOGGER.debug("Vacuum stop request: %s", self._attr_name)
         self._cleaning = False
         self.async_write_ha_state()
+        # Удалить этот виртуальный пылесос из pending_zones_ordered координатора
+        await self.coordinator.remove_zone(self)
 
 class ZoneCoordinatorIsPending(BinarySensorEntity):
     """Binary sensor indicating if coordinator has pending cleaning groups."""
