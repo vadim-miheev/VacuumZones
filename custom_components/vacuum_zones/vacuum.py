@@ -188,6 +188,7 @@ class ZoneCoordinator:
         unique_rooms = sorted(set(all_rooms))
 
         vacuum_state = self.hass.states.get(self.vacuum_entity_id)
+        all_rooms_mode = False
         # Получить последовательность комнат из настроек пылесоса
         if vacuum_state and "cleaning_sequence" in vacuum_state.attributes:
             cleaning_sequence = vacuum_state.attributes.get("cleaning_sequence")
@@ -195,6 +196,7 @@ class ZoneCoordinator:
                 room_id for room_id in cleaning_sequence
                 if room_id in unique_rooms
             ]
+            all_rooms_mode = unique_rooms == cleaning_sequence
 
         use_customized_cleaning = False
         # Определить сценарий
@@ -219,6 +221,7 @@ class ZoneCoordinator:
             "rooms": unique_rooms,
             "cleaning_mode": cleaning_mode,
             "use_customized_cleaning": use_customized_cleaning,
+            "all_rooms_mode": all_rooms_mode,
         }
 
     async def _call_services(self, service_data):
@@ -226,6 +229,7 @@ class ZoneCoordinator:
         rooms = service_data["rooms"]
         cleaning_mode = service_data["cleaning_mode"]
         use_customized_cleaning = service_data["use_customized_cleaning"]
+        all_rooms_mode = service_data["all_rooms_mode"]
 
         if use_customized_cleaning:
             # Выключить Clean Genius перед кастомной уборкой
@@ -245,15 +249,27 @@ class ZoneCoordinator:
         # Вызвать vacuum_clean_segment
         _LOGGER.debug("vacuum_clean_segment for rooms %s, test_mode=%s", rooms, self.test_mode)
         if not self.test_mode:
-            await self.hass.services.async_call(
-                domain,
-                "vacuum_clean_segment",
-                {
-                    ATTR_ENTITY_ID: self.vacuum_entity_id,
-                    "segments": rooms,
-                },
-                blocking=True,
-            )
+            if all_rooms_mode:
+                # Уборка всех комнат
+                await self.hass.services.async_call(
+                    "vacuum",
+                    "start",
+                    {
+                        ATTR_ENTITY_ID: self.vacuum_entity_id,
+                    },
+                    blocking=True,
+                )
+            else:
+                # Уборка конкретных комнат
+                await self.hass.services.async_call(
+                    domain,
+                    "vacuum_clean_segment",
+                    {
+                        ATTR_ENTITY_ID: self.vacuum_entity_id,
+                        "segments": rooms,
+                    },
+                    blocking=True,
+                )
 
     async def _get_vacuum_domain(self):
         """Получить домен основного пылесоса."""
