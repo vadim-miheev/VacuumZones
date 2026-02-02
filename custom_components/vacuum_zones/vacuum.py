@@ -249,11 +249,10 @@ class ZoneCoordinator:
         # Определить домен и сервис на основе основного пылесоса
         domain = await self._get_vacuum_domain()
 
-        # Вызвать vacuum_clean_segment
-        _LOGGER.debug("vacuum_clean_segment for rooms %s, test_mode=%s", rooms, self.test_mode)
         if not self.test_mode:
             if all_rooms_mode:
                 # Уборка всех комнат
+                _LOGGER.debug("vacuum.start test_mode=%s", self.test_mode)
                 await self.hass.services.async_call(
                     "vacuum",
                     "start",
@@ -263,7 +262,8 @@ class ZoneCoordinator:
                     blocking=True,
                 )
             else:
-                # Уборка конкретных комнат
+                # Вызвать vacuum_clean_segment - уборка конкретных комнат
+                _LOGGER.debug("vacuum_clean_segment for rooms %s, test_mode=%s", rooms, self.test_mode)
                 await self.hass.services.async_call(
                     domain,
                     "vacuum_clean_segment",
