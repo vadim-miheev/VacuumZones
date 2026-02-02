@@ -234,14 +234,17 @@ class ZoneCoordinator:
         if use_customized_cleaning:
             # Выключить Clean Genius перед кастомной уборкой
             await self._turn_off_cleangenius()
+            await asyncio.sleep(1)
             # Активировать customized cleaning switch
             await self._set_customized_cleaning(True)
+            await asyncio.sleep(1)
             # Установить настройки для каждой комнаты
             await self._set_customized_room_settings(rooms)
+            await asyncio.sleep(3)
         else:
-            await self._set_customized_cleaning(False)
             # Установить cleaning_mode
             await self._set_cleaning_mode(cleaning_mode)
+            await asyncio.sleep(1)
 
         # Определить домен и сервис на основе основного пылесоса
         domain = await self._get_vacuum_domain()
