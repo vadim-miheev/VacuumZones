@@ -233,15 +233,18 @@ class ZoneCoordinator:
 
         if use_customized_cleaning:
             # Выключить Clean Genius перед кастомной уборкой
-            await self._turn_off_cleangenius()
+            await self._set_select_option(f"select.{self.prefix}_cleangenius", "off")
             await asyncio.sleep(1)
-            # Активировать customized cleaning switch
+            # Активировать customized cleaning
             await self._set_customized_cleaning(True)
             await asyncio.sleep(1)
             # Установить настройки для каждой комнаты
             await self._set_customized_room_settings(rooms)
-            await asyncio.sleep(3)
+            await asyncio.sleep(3) # даем пылесосу время применить настройки
         else:
+            # Деактивировать customized cleaning
+            await self._set_customized_cleaning(False)
+            await asyncio.sleep(1)
             # Установить cleaning_mode
             await self._set_cleaning_mode(cleaning_mode)
             await asyncio.sleep(1)
@@ -319,14 +322,9 @@ class ZoneCoordinator:
             _LOGGER.debug("Activated CleanGenius %s with mod %s", clean_genius, clean_genius_mode)
         else:
             # Установить обычный режим уборки
-            await self._turn_off_cleangenius()
+            await self._set_select_option(f"select.{self.prefix}_cleangenius", "off")
             await self._set_select_option(f"select.{self.prefix}_cleaning_mode", cleaning_mode)
             _LOGGER.debug("Activated cleaning mode %s", cleaning_mode)
-
-    async def _turn_off_cleangenius(self):
-        """Выключить Clean Genius."""
-        await self._set_select_option(f"select.{self.prefix}_cleangenius", "off")
-        _LOGGER.debug("Turned off cleangenius")
 
     def _fill_room_to_mode_mapping(self, room, cleaning_mode, room_to_mode):
         """Добавить комнату (или список комнат) в mapping room->cleaning_mode.
