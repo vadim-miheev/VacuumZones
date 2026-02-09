@@ -125,7 +125,7 @@ class ZoneCoordinator:
         except Exception as e:
             _LOGGER.error("Error executing group: %s", e)
             # Очищаем pending zones при ошибке
-            await self._rollback_to_initial_state()
+            await self.rollback_to_initial_state()
 
     async def _execute_tasks(self):
         """Выполнить накопленные команды."""
@@ -146,7 +146,12 @@ class ZoneCoordinator:
             _LOGGER.error("Error executing cleaning group: %s", e)
         finally:
             # Всегда очищаем pending zones после выполнения или ошибки
-            await self._rollback_to_initial_state()
+            await self.rollback_to_initial_state()
+
+    async def async_trigger_immediate_execution(self):
+        """Немедленно выполнить накопленные задачи, отменяя таймер."""
+        self._cancel_timer()
+        await self._execute_tasks()
 
     async def check_and_stop_vacuum(self):
         """Остановить пылесос если он в состоянии cleaning."""
@@ -161,7 +166,7 @@ class ZoneCoordinator:
                     blocking=True,
                 )
 
-    async def _rollback_to_initial_state(self):
+    async def rollback_to_initial_state(self):
         # Создаем копию списка, чтобы избежать изменения во время итерации
         zones_to_stop = list(self.pending_zones_ordered)
         for zone in zones_to_stop:
@@ -430,6 +435,10 @@ async def async_setup_platform(hass, _, async_add_entities, discovery_info=None)
         for (name, config) in discovery_info["zones"].items()
     ]
 
+    # Add instant start vacuum if start_delay > 0
+    if start_delay > 0:
+        entities.append(InstantStartVacuum(coordinator, entity_id))
+
     async_add_entities(entities)
 
 
@@ -539,3 +548,36 @@ class ZoneCoordinatorIsPending(BinarySensorEntity):
         """Handle coordinator state updates."""
         # Schedule state update in Home Assistant
         self.async_write_ha_state()
+
+class InstantStartVacuum(StateVacuumEntity):
+    _attr_supported_features = VacuumEntityFeature.START | VacuumEntityFeature.STOP
+    _attr_name = "Vacuum Zones Instant Start"
+
+    def __init__(self, coordinator, parent_id):
+        self.coordinator = coordinator
+        self.parent_id = parent_id
+        self._attr_unique_id = f"{parent_id}_instant_start"
+        self._attr_device_info = {
+            "identifiers": {("vacuum_zones", parent_id)},
+            "name": f"Vacuum Zones ({parent_id})",
+            "manufacturer": "VacuumZones",
+            "model": "Zone Coordinator",
+        }
+
+    @property
+    def activity(self) -> VacuumActivity:
+        return VacuumActivity.IDLE
+
+    @property
+    def vacuum_entity_id(self) -> str:
+        return self.parent_id
+
+    async def async_start(self):
+        """Немедленно запустить выполнение накопленных задач."""
+        _LOGGER.debug("Instant start triggered for %s", self.parent_id)
+        await self.coordinator.async_trigger_immediate_execution()
+
+    async def async_stop(self, **kwargs):
+        """Остановить все pending зоны и отменить таймер."""
+        _LOGGER.debug("Instant stop triggered for %s", self.parent_id)
+        await self.coordinator.rollback_to_initial_state()
